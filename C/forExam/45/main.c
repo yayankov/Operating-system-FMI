@@ -1,79 +1,76 @@
-#include<stdlib.h>
-#include<stdio.h>
-#include<unistd.h>
-       #include <unistd.h>
+#include <stdlib.h>
+#include <err.h>
+#include <sys/stat.h>
 #include <sys/types.h>
-       #include <sys/stat.h>
-       #include <fcntl.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <stdint.h>
 
-#include<err.h>
-
-
- //cat /etc/passwd | awk -F: '{print $7}' | sort | uniq -c | sort -n
-
-int main()
+int main(int argc, char** argv)
 {
-	int a[2];
-	if(pipe(a) < 0) err(1,"error pipe");
+	if(argc != 3) errx(1,"error. the arguments should be 3");
+
+	char* input = argv[1];
+	char* output= argv[2];
 	
-	const pid_t child = fork();
-	if(child < 0) err(2,"error fork");
-	if(child == 0) {
-		close(a[0]);
-		if(dup2(a[1],1) == -1) err(3,"error dup2");
-		if(execlp("cat","cat","/etc/passwd",0) < 0) err(20,"error execlp");
+	struct stat st;
+
+	if(stat(input,&st) < 0) {
+		err(2,"error. could not stat file1");
 	}
-	close(a[1]);
-	
-	int b[2];
-	if(pipe(b) < 0) err(1,"error pipe");
-
-    const pid_t child2 = fork();
-    if(child2 < 0) err(2,"error fork");
-    if(child2 == 0) {
-        if(dup2(a[0],0) == -1) err(6,"error dup2 0");
-		close(b[0]);
-        if(dup2(b[1],1) == -1) err(7,"error dup2 1");
-        if(execlp("cut","cut","-d:","-f7",0) < 0) err(8,"error execlp");
-    }   
-    close(b[1]);
-
-	int c[2];
-    if( pipe(c) < 0) err(1,"error pipe");
-
-    const pid_t child3 = fork();
-    if(child3 < 0) err(2,"error fork");
-    if(child3 == 0) {
-        if(dup2(b[0],0) == -1) err(9,"error dup2 ");
-        close(c[0]);
-        if(dup2(c[1],1) == -1) err(10,"error dup2 ");
-        if(execlp("sort","sort",0) < 0) err(11,"error execlp");
-    }   
-    close(c[1]);
-
-	int d[2];
-	if( pipe(d) < 0 ) err(1,"error pipe");
-	
-	const pid_t child4 = fork();
-	if(child4 == -1) err(12,"error child4");
-	if(child4 == 0) {
-		if( dup2(c[0],0) == -1 ) err(13,"error dup2");
-		close(d[0]);
-		if( dup2(d[1],1) == -1) err(14,"error dup2");
-		if(execlp("uniq","uniq","-c",(char *)NULL) == -1) err(15,"error execlp");
+	if(st.st_size % sizeof(uint16_t) != 0 ) {
+		errx(3,"error file1 is corrupted");
 	}
-	close(d[1]);
-	
-	if(dup2(d[0],0)== -1) err(16,"error dup2");
-	if(execlp("sort","sort","-n",(char*)NULL) == -1) err(17,"error execlp");
-	
+	if(!(st.st_mode & S_IRUSR)) {
+		errx(4,"The file is not readable");
+	}
+
+	ssize_t in = open(input,O_RDONLY);
+	if(in == -1) {
+		err(5,"Error open input file");
+	}
+
+	ssize_t out = open(output, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
+	if( out == -1) {
+		const int _errno = errno;
+		close(in);
+		errno = _errno;
+		err(6,"Error open output file");
+	}
+
+	uint32_t counting[0xffff +1] = { 0 };
+	uint16_t buf[1<<10];
+	ssize_t rd;
+
+	while( (rd = read(in,&buf,sizeof(buf))) > 0) {
+		if( rd == -1) {
+			const int _errno = errno;
+			close(in);
+			close(out);
+			errno = _errno;
+			err(7,"error reading file1");
+		}
+		for(uint16_t i=0;i < rd/sizeof(uint16_t); i++) {
+			counting[buf[i]]++;
+		}
+	}
+	ssize_t wr;
+	for(uint32_t i = 0; i <= 0xffff; i++) {
+		while(counting[i]--) {
+			wr = write(out,&i,sizeof(uint16_t));
+			if(wr == -1) {
+				const int _errno = errno;
+				close(in);
+				close(out);
+				errno = _errno;
+				err(8,"error writing in file2");
+			}
+		}
+	}
+
+	close(in);
+	close(out);
+	exit(0);
+
 }
-
-
-
-
-
-
-
-
-

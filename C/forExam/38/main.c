@@ -1,76 +1,98 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdint.h>
-#include <err.h>
-#include <errno.h>
-#include <string.h>
+#include<stdlib.h>
+#include<stdio.h>
+#include<stdint.h>
+#include<sys/stat.h>
+#include<sys/types.h>
+#include<errno.h>
+#include<err.h>
+#include<unistd.h>
+#include<fcntl.h> 
 
-int compare(char *str, char c)
-{
-	int i = 0;
-    while(str[i] != '\0') {
-    	if( c == str[i] )   {
-        	return i;
-       	}
-        i++;
-   	}
-	return -1;	
-}
-
-int main(int argc, char** argv)
-{
-	if(argc < 2 || argc > 4) errx(1,"error arguments");
+int main(int argc,char** argv) {
+	if (argc != 5) errx(1,"Error arguments");
+	struct stat st1;
+	if ( stat(argv[1],&st1) == -1) err(2,"Error stat");
+	if ( (st1.st_size%sizeof(uint8_t)) != 0 ) errx(3,"Error file 1 format");
 	
+	int fd1 = open(argv[1],O_RDONLY);
+	if(fd1 == -1) err(4,"ERRor open file 1");
 	
-	if(strcmp(argv[1],"-d") == 0) {
-		if(argc != 3) errx(2,"error arguments");
-		char* str = argv[2];
-		char c;
-
-		while( read(0,&c,1) == 1 ) {
-
-			if( compare(str,c) == -1 ) {
-				write(1,&c,1);
-			}
-		}
-		
-	} else if(strcmp(argv[1],"-s") == 0) {		  
-	    if(argc != 3) errx(3, "error arguments");
-		char* str = argv[2];	
-		char a;
-		char last = '\0';
-		while( read(0,&a,1) == 1) {
-			if(compare(str,a) == -1) {
-				write(1,&a,1);
-			} else {
-				if(a != last) {
-					write(1,&a,1);
-				}
-			}
-			last = a;
-		}
-			
-	} else {
-		
-		char* str1 = argv[1];
-		char* str2 = argv[2];		
-
-		char c;
-   
-		while( read(0,&c,1) == 1 ) {
-				int pos = compare(str1,c);
-                if( pos == -1 ) {
-					 write(1,&c,1);
-            	}
-				if( pos != -1 ) {
-					write(1,&str2[pos],1);
-				}
-		}
-	
+	int fd2 = open(argv[2],O_RDONLY);
+	if( fd2 == -1 ) {
+		const int _errno = errno;
+		close(fd1);
+		errno = _errno;
+		err(5,"ERROR open file 2");
 	}
 
+	int fd3 = open(argv[3],O_CREAT | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR);
+	if ( fd3 == -1 ) {
+		const int _errno = errno;
+        close(fd1);
+     	close(fd2);
+		errno = _errno;
+        err(6,"ERROR open file 3");
+	}
+	
+	int fd4 = open(argv[4],O_CREAT | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR);
+    if ( fd4 == -1 ) {
+        const int _errno = errno;
+        close(fd1);
+        close(fd2);
+		close(fd3);
+        errno = _errno;
+        err(7,"ERROR open file 4");
+    }
+
+	struct triple {
+		uint16_t pos;
+		uint8_t len;
+		uint8_t nothing;
+	} a;
+
+	while( read(fd2,&a,sizeof(a)) == sizeof(a) ) {
+		lseek(fd1,(a.pos)*sizeof(uint8_t),SEEK_SET);
+		uint8_t start;
+		read(fd1,&start,sizeof(start));
+		if( start < 'A' || start > 'Z' ) {
+			continue;
+		}
+		printf("Start: %d\n",start);
+		write(fd3,&start,sizeof(start));
+		uint16_t cnt = 2;
+		uint8_t buf;
+     	while( (cnt <= a.len) && (read(fd1,&buf,sizeof(buf)) == sizeof(buf)) ) {
+			write(1,&buf,sizeof(buf));
+			printf("cnt: %d, a.len: %d\n",cnt,a.len);
+			write(fd3,&buf,sizeof(buf));
+			cnt = cnt + 1;
+		}
+		uint16_t buf2;
+		write(fd4,&buf2,sizeof(buf2));
+		cnt = a.len; 
+		write(fd4,&cnt,sizeof(cnt));
+		buf2 += cnt;
+	}	
+
+	close(fd1);
+	close(fd2);
+	close(fd3);
+	close(fd4);
+	exit(0);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

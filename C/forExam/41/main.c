@@ -1,76 +1,97 @@
-#include <stdlib.h>
-#include <err.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
-#include <stdint.h>
+#include<stdlib.h>
+#include<stdio.h>
+#include<unistd.h>
+#include<stdint.h>
+#include<sys/types.h>
+#include<fcntl.h>
+#include<errno.h>
+#include<sys/stat.h>
+#include<err.h>
 
-int main(int argc, char** argv)
-{
-	if(argc != 3) errx(1,"error. the arguments should be 3");
+int main(int argc,char** argv) {
 
-	char* input = argv[1];
-	char* output= argv[2];
-	
+	if(argc != 4) errx(1,"Error arguments");
 	struct stat st;
+	if (stat(argv[2],&st) == -1) err(2,"Error stat file 2");
+	if( (st.st_size%sizeof(uint8_t)) != 0) errx(3,"error size of f1.bin");
 
-	if(stat(input,&st) < 0) {
-		err(2,"error. could not stat file1");
-	}
-	if(st.st_size % sizeof(uint16_t) != 0 ) {
-		errx(3,"error file1 is corrupted");
-	}
-	if(!(st.st_mode & S_IRUSR)) {
-		errx(4,"The file is not readable");
-	}
-
-	ssize_t in = open(input,O_RDONLY);
-	if(in == -1) {
-		err(5,"Error open input file");
-	}
-
-	ssize_t out = open(output, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
-	if( out == -1) {
-		const int _errno = errno;
-		close(in);
+	int fd = open(argv[2],O_RDONLY);
+	if (fd == -1) err(5,"Error open f1.bin");
+	
+	int fd2 = open(argv[3],O_CREAT | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR );
+	if( fd2 == -1) {	
+		const int _errno=errno;
+		close(fd);
 		errno = _errno;
-		err(6,"Error open output file");
+		err(4,"Error open f2.bin");
 	}
-
-	uint32_t counting[0xffff +1] = { 0 };
-	uint16_t buf[1<<10];
-	ssize_t rd;
-
-	while( (rd = read(in,&buf,sizeof(buf))) > 0) {
-		if( rd == -1) {
+	
+	uint8_t a;
+	ssize_t rd_size;
+	while( (rd_size = read(fd,&a,sizeof(a))) == sizeof(a)) {
+		if(write(fd2,&a,rd_size) != rd_size) {
 			const int _errno = errno;
-			close(in);
-			close(out);
+			close(fd);
+			close(fd2);
 			errno = _errno;
-			err(7,"error reading file1");
-		}
-		for(uint16_t i=0;i < rd/sizeof(uint16_t); i++) {
-			counting[buf[i]]++;
-		}
-	}
-	ssize_t wr;
-	for(uint32_t i = 0; i <= 0xffff; i++) {
-		while(counting[i]--) {
-			wr = write(out,&i,sizeof(uint16_t));
-			if(wr == -1) {
-				const int _errno = errno;
-				close(in);
-				close(out);
-				errno = _errno;
-				err(8,"error writing in file2");
-			}
+			err(6,"Error writing in f2.bin");
 		}
 	}
 
-	close(in);
-	close(out);
-	exit(0);
+	int fd3= open(argv[1],O_RDONLY);
+	if( fd3 == -1) {
+		const int _errno = errno;
+        close(fd);
+        close(fd2);
+        errno = _errno;
+        err(7,"Error open patch.bin");
+	}
+
+	struct triple {
+		uint16_t pos;
+		uint8_t old;
+		uint8_t new;
+	} b;
+
+	
+	while( (rd_size = read(fd3,&b,sizeof(b))) == sizeof(b)) {
+		if ( lseek(fd2,b.pos,SEEK_SET) == -1) {
+			const int _errno = errno;
+            close(fd);
+            close(fd2);
+			close(fd3);
+            errno = _errno;
+            err(8,"Error lseek");
+		}
+		uint8_t symbol;
+		read(fd2,&symbol,sizeof(symbol));
+		if (symbol == b.old) {
+			lseek(fd2,-1,SEEK_CUR);
+			write(fd2,&b.new,sizeof(b.new));
+		}
+		else {
+			err(9,"Error patch format");
+		}
+	}
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,40 +1,72 @@
+#include<stdlib.h>
+#include<unistd.h>
+#include<err.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdint.h>
-#include <err.h>
-#include <errno.h>
-#include <stdlib.h>
+       #include <sys/stat.h>
+       #include <fcntl.h>
+#include<sys/stat.h>
+#include<stdio.h>
+#include<fcntl.h>
+#include<string.h>
+#include<stdint.h>
 
-int main(int argc, char** argv)
-{
-	if(argc != 4) errx(1,"error arguments");
-	int f1 = open(argv[1],O_RDONLY);
-	int f2 = open(argv[2],O_RDONLY);
-	int fd = open(argv[3],O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-	
-	struct triple {
-		uint16_t begin;
-		uint8_t old;
-		uint8_t new;
-	};
-	
-	uint8_t s1;
-	uint8_t s2;	
+int cmp(const void* a, const void* b) {
+	if( *((uint8_t*)a) > *((uint8_t*)b) ) 
+		return 1;
+	else if ( *((uint8_t*)a) < *((uint8_t*)b) ) 
+		return -1;
+	return 0;
+}
 
-	struct triple a;
-	a.begin = 0;
+int main(int argc,char** argv) {
 
-	while( (read(f1,&s1,sizeof(s1)) == sizeof(s1)) && (read(f2,&s2,sizeof(s2)) == sizeof(s2)) ) {
-		if(s2 != s1) {
-	  
-			a.old = s1;
-			a.new = s2;
-			write(fd,&a,sizeof(a));
-		}
-		a.begin++;
+	if (argc != 3) errx(1,"Wrong number of arguments");
+
+	int	fd = open(argv[1],O_RDONLY);
+	if ( fd == -1 ) err(2,"Error with file");
+
+	struct stat st;
+	if ( stat(argv[1],&st) == -1 ) {
+		close(fd);
+		err(3,"Error stat");
 	}
-
+	if ( st.st_size == 0 ) {
+		close(fd);
+		err(4,"Error size file1");
+	}
+	int fd_rev = open(argv[2],O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR );
+	if ( fd_rev == -1 ) {
+		close(fd);	
+		err(5,"Error open file 2");
+	}
+	void* buff = malloc(st.st_size);
+	if ( buff == NULL ) {
+		close(fd);
+		close(fd_rev);
+		err(6,"Error malloc");
+	}
+	if ( read(fd,buff,st.st_size) != st.st_size) {
+		close(fd);
+		close(fd_rev);
+		free(buff);
+		err(7,"Wrong read from file");
+	}
+	qsort(buff,st.st_size,sizeof(uint8_t),cmp);
+	if ( write(fd_rev,buff,st.st_size) != st.st_size ) {
+		close(fd);
+		close(fd_rev);
+		free(buff);
+		err(8,"Error writing in file 2");
+	}		
+	free(buff);
+	close(fd);
+	close(fd_rev);
 	exit(0);
 }
+
+
+
+
+
+
+
